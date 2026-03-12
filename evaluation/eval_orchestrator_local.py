@@ -48,7 +48,8 @@ SYSTEM_PROMPT = (
     "You are an orchestration model with access to the provided tools. "
     "Use a tool only when the user's request requires capabilities from that tool. "
     "If the task can be answered from text or general knowledge alone, answer directly without calling a tool. "
-    "When tool results are returned, use them to produce the final user-facing answer."
+    "When tool results are returned, use them to produce the final user-facing answer. "
+    "If you decide to call a tool, do not include long reasoning before the tool call."
 )
 
 
@@ -148,7 +149,7 @@ def main() -> None:
 
     while round_idx <= args.max_rounds:
         print(f"\n=== ROUND {round_idx}: Ask Nemotron via ToolOrchestra LLM_CALL ===\n")
-        response = ask_nemotron(messages, max_length=1024 if round_idx == 1 else 512)
+        response = ask_nemotron(messages, max_length=1024)
 
         if args.verbose:
             print("Raw response object:")
@@ -187,10 +188,14 @@ def main() -> None:
             print(json.dumps(tool_result, indent=2))
             print()
 
+        compact_tool_result = {
+            "content": tool_result.get("content", ""),
+        }
+
         messages.append(
             {
                 "role": "assistant",
-                "content": response_text,
+                "content": "",
                 "tool_calls": [tc],
             }
         )
@@ -198,7 +203,7 @@ def main() -> None:
             {
                 "role": "tool",
                 "tool_call_id": tc["id"],
-                "content": json.dumps(tool_result),
+                "content": json.dumps(compact_tool_result),
             }
         )
 
