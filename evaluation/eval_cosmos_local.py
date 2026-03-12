@@ -7,12 +7,16 @@ import sys
 from typing import Any, Dict, List, Optional
 
 import requests
+from pathlib import Path
 
 REPO_PATH = os.getenv("REPO_PATH")
-if REPO_PATH and REPO_PATH not in sys.path:
-    sys.path.append(REPO_PATH)
+repo_root = Path(REPO_PATH) if REPO_PATH else Path(__file__).resolve().parents[1]
+
+if str(repo_root) not in sys.path:
+    sys.path.append(str(repo_root))
 
 from LLM_CALL import get_llm_response
+from evaluation.tool_handlers import dispatch_tool
 
 
 NEMOTRON_MODEL = "nvidia/Nemotron-Orchestrator-8B"
@@ -30,51 +34,11 @@ LOCAL_MODEL_CONFIG = [
     }
 ]
 
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "cosmos_infer",
-            "description": (
-                "Analyze casualty images or videos with the Cosmos VLM. "
-                "Use this when the task requires visual inspection of media."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "prompt": {
-                        "type": "string",
-                        "description": "Instruction to send to Cosmos."
-                    },
-                    "videos": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "List of real canonical video paths."
-                    },
-                    "images": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "List of real canonical image paths."
-                    },
-                    "reasoning": {
-                        "type": "boolean",
-                        "description": "Whether to request reasoning_content from Cosmos."
-                    },
-                    "fps": {
-                        "type": "number",
-                        "description": "Frames per second to sample for video inference."
-                    },
-                    "max_tokens": {
-                        "type": "integer",
-                        "description": "Optional max_tokens for Cosmos generation."
-                    },
-                },
-                "required": ["prompt"],
-                "additionalProperties": False,
-            },
-        },
-    }
-]
+# Loading in the available tools from the tools.json file (same directorty as this file)
+TOOLS_PATH = Path(__file__).resolve().parent / "tools.json"
+
+with open(TOOLS_PATH, "r") as f:
+    TOOLS = json.load(f)
 
 
 SYSTEM_PROMPT = (
@@ -84,31 +48,6 @@ SYSTEM_PROMPT = (
     "answer directly without calling the tool. "
     "When tool results are returned, use them to produce the final user-facing answer."
 )
-
-
-def cosmos_call(
-    prompt: str,
-    videos: Optional[List[str]] = None,
-    images: Optional[List[str]] = None,
-    reasoning: bool = False,
-    fps: float = 2.0,
-    max_tokens: Optional[int] = None,
-) -> Dict[str, Any]:
-    payload: Dict[str, Any] = {
-        "prompt": prompt,
-        "reasoning": reasoning,
-        "fps": fps,
-    }
-    if videos:
-        payload["videos"] = videos
-    if images:
-        payload["images"] = images
-    if max_tokens is not None:
-        payload["max_tokens"] = max_tokens
-
-    resp = requests.post(COSMOS_URL, json=payload, timeout=1200)
-    resp.raise_for_status()
-    return resp.json()
 
 
 def response_to_message_text(resp: Any) -> str:
@@ -216,25 +155,24 @@ def main() -> None:
         fn = tc["function"]["name"]
         fn_args = json.loads(tc["function"]["arguments"])
 
-        if fn != "cosmos_infer":
-            raise ValueError(f"Unexpected tool call: {fn}")
-
-        print("=== STEP 2: Nemotron requested cosmos_infer ===\n")
+        print("=== STEP 2: Nemotron requested tool ===\n")
         print(json.dumps(tc, indent=2))
         print()
 
-        cosmos_result = cosmos_call(
-            prompt=fn_args.get("prompt", args.task),
-            videos=fn_args.get("videos", args.video),
-            images=fn_args.get("images", args.image),
-            reasoning=bool(fn_args.get("reasoning", args.cosmos_reasoning)),
-            fps=float(fn_args.get("fps", args.cosmos_fps)),
-            max_tokens=fn_args.get("max_tokens"),
-        )
+        tool_arguments = {
+            "prompt": fn_args.get("prompt", args.task),
+            "videos": fn_args.get("videos", args.video),
+            "images": fn_args.get("images", args.image),
+            "reasoning": bool(fn_args.get("reasoning", args.cosmos_reasoning)),
+            "fps": float(fn_args.get("fps", args.cosmos_fps)),
+            "max_tokens": fn_args.get("max_tokens"),
+        }
+
+        tool_result = dispatch_tool(fn, tool_arguments)
 
         if args.verbose:
-            print("Raw Cosmos result:")
-            print(json.dumps(cosmos_result, indent=2))
+            print("Raw tool result:")
+            print(json.dumps(tool_result, indent=2))
             print()
 
         messages.append(
@@ -248,7 +186,7 @@ def main() -> None:
             {
                 "role": "tool",
                 "tool_call_id": tc["id"],
-                "content": json.dumps(cosmos_result),
+                "content": json.dumps(tool_result),
             }
         )
 
