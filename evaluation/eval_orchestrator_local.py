@@ -109,15 +109,27 @@ def build_user_message(task: str, videos: List[str], images: List[str]) -> str:
     )
     return "\n".join(parts)
 
+def ask_nemotron(messages: List[Dict[str, Any]], max_length: int = 1024) -> Any:
+    return get_llm_response(
+        model=NEMOTRON_MODEL,
+        messages=messages,
+        return_raw_response=True,
+        tools=TOOLS,
+        model_type="vllm",
+        max_length=max_length,
+        temperature=0.0,
+        model_config=LOCAL_MODEL_CONFIG,
+    )
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--task", required=True)
     parser.add_argument("--video", action="append", default=[])
     parser.add_argument("--image", action="append", default=[])
-    parser.add_argument("--reasoning", action="store_true")
+    parser.add_argument("--reasoning", action="store_true")             # Whether to prompt tools to return more detail reasoning traces
     parser.add_argument("--fps", type=float, default=2.0)
-    parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--max-rounds", type=int, default=5)            # Max number of tool call rounds before we stop and return
+    parser.add_argument("--verbose", action="store_true")               # Whether to print verbose debug info about responses and tool results
     args = parser.parse_args()
 
     messages: List[Dict[str, Any]] = [
@@ -132,32 +144,30 @@ def main() -> None:
         },
     ]
 
-    print("\n=== STEP 1: Ask Nemotron via ToolOrchestra LLM_CALL ===\n")
-    first_response = get_llm_response(
-        model=NEMOTRON_MODEL,
-        messages=messages,
-        return_raw_response=True,
-        tools=TOOLS,
-        model_type="vllm",
-        max_length=1024,
-        temperature=0.0,
-        model_config=LOCAL_MODEL_CONFIG,
-    )
+    round_idx = 1
 
-    if args.verbose:
-        print("Raw first response object:")
-        print(first_response)
-        print()
+    while round_idx <= args.max_rounds:
+        print(f"\n=== ROUND {round_idx}: Ask Nemotron via ToolOrchestra LLM_CALL ===\n")
+        response = ask_nemotron(messages, max_length=1024 if round_idx == 1 else 512)
 
-    first_text = response_to_message_text(first_response)
-    first_tool_calls = response_to_tool_calls(first_response)
+        if args.verbose:
+            print("Raw response object:")
+            print(response)
+            print()
 
-    if first_tool_calls:
-        tc = tool_call_to_dict(first_tool_calls[0])
+        response_text = response_to_message_text(response)
+        tool_calls = response_to_tool_calls(response)
+
+        if not tool_calls:
+            print("=== FINAL ANSWER ===\n")
+            print(response_text.strip())
+            return
+
+        tc = tool_call_to_dict(tool_calls[0])
         fn = tc["function"]["name"]
         fn_args = json.loads(tc["function"]["arguments"])
 
-        print("=== STEP 2: Nemotron requested tool ===\n")
+        print("=== TOOL REQUESTED ===\n")
         print(json.dumps(tc, indent=2))
         print()
 
@@ -180,7 +190,7 @@ def main() -> None:
         messages.append(
             {
                 "role": "assistant",
-                "content": first_text,
+                "content": response_text,
                 "tool_calls": [tc],
             }
         )
@@ -192,31 +202,10 @@ def main() -> None:
             }
         )
 
-        print("=== STEP 3: Ask Nemotron for final answer ===\n")
-        second_response = get_llm_response(
-            model=NEMOTRON_MODEL,
-            messages=messages,
-            return_raw_response=True,
-            tools=TOOLS,
-            model_type="vllm",
-            max_length=512,
-            temperature=0.0,
-            model_config=LOCAL_MODEL_CONFIG,
-        )
+        round_idx += 1
 
-        if args.verbose:
-            print("Raw second response object:")
-            print(second_response)
-            print()
-
-        final_text = response_to_message_text(second_response)
-        print("=== FINAL ANSWER ===\n")
-        print(final_text.strip())
-        return
-
-    print("=== FINAL ANSWER (direct, no tool call) ===\n")
-    print(first_text.strip())
-
+    print("=== STOPPED ===\n")
+    print(f"Reached max rounds ({args.max_rounds}) without a final answer.")
 
 if __name__ == "__main__":
     main()
