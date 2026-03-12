@@ -38,5 +38,10 @@ TOOL_REGISTRY = {
 
 def dispatch_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     if tool_name not in TOOL_REGISTRY:
-        raise ValueError(f"Unknown tool: {tool_name}")
+        available_tools = ", ".join(sorted(TOOL_REGISTRY.keys()))
+        raise ValueError(
+            f"Unknown tool requested: '{tool_name}'. "
+            f"Available tools: [{available_tools}]. "
+            f"Arguments: {arguments}"
+        )
     return TOOL_REGISTRY[tool_name](arguments)

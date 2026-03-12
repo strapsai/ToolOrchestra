@@ -20,12 +20,31 @@ from evaluation.tool_handlers import dispatch_tool
 
 NEMOTRON_MODEL = "nvidia/Nemotron-Orchestrator-8B"
 
-## Example call:
-# python evaluation/eval_cosmos_local.py \
+## Known-good test commands:
+
+# 1) Tool-use case (single round tool call, then final answer)
+# python evaluation/eval_orchestrator_local.py \
 #   --task "Assess the injuries visible on this casualty. What is the appropriate triage category (Immediate, Delayed, Minor, Expectant)?" \
 #   --video "/home/darpa_triage_vlm/vlm_workspace/data/share/datasets/year3_labeling/RGB_Snippets/snippets_proj225664_task245750644_ann85399073_20260201T204055Z/casualty_16/casualty_16_f1-1589/casualty_16_f1-1589_fps50_bbox_overlaid.mp4" \
 #   --reasoning \
 #   --fps 2.0 \
+#   --max-rounds 5 \
+#   --verbose
+
+# 2) Direct-answer case (should not call a tool)
+# python evaluation/eval_orchestrator_local.py \
+#   --task "Ignore the media and explain in two sentences what an orchestration model does." \
+#   --video "/home/darpa_triage_vlm/vlm_workspace/data/share/datasets/year3_labeling/RGB_Snippets/snippets_proj225664_task245750644_ann85399073_20260201T204055Z/casualty_16/casualty_16_f1-1589/casualty_16_f1-1589_fps50_bbox_overlaid.mp4" \
+#   --max-rounds 5 \
+#   --verbose
+
+# 3) Two-round tool-use case
+# python evaluation/eval_orchestrator_local.py \
+#   --task "Follow this protocol exactly: (1) First tool call: ask only for a provisional triage category from the overall scene. Do not ask about bleeding, posture, or movement. (2) Second tool call: ask only whether there is visible severe bleeding, abnormal posture, or lack of movement, and whether those findings change the provisional triage category. You must make these as two distinct tool calls. Only after the second tool call may you produce the final answer." \
+#   --video "/home/darpa_triage_vlm/vlm_workspace/data/share/datasets/year3_labeling/RGB_Snippets/snippets_proj225664_task245750644_ann85399073_20260201T204055Z/casualty_16/casualty_16_f1-1589/casualty_16_f1-1589_fps50_bbox_overlaid.mp4" \
+#   --reasoning \
+#   --fps 2.0 \
+#   --max-rounds 5 \
 #   --verbose
 
 
@@ -90,6 +109,17 @@ def tool_call_to_dict(tc: Any) -> Dict[str, Any]:
             "arguments": getattr(function_obj, "arguments", "{}"),
         },
     }
+
+def parse_tool_arguments(tc: Dict[str, Any]) -> Dict[str, Any]:
+    raw_args = tc["function"].get("arguments", "{}")
+    try:
+        return json.loads(raw_args)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            "Failed to parse tool arguments as JSON.\n"
+            f"Tool name: {tc['function'].get('name')}\n"
+            f"Raw arguments: {raw_args}"
+        ) from e
 
 
 def build_user_message(task: str, videos: List[str], images: List[str]) -> str:
@@ -166,7 +196,7 @@ def main() -> None:
 
         tc = tool_call_to_dict(tool_calls[0])
         fn = tc["function"]["name"]
-        fn_args = json.loads(tc["function"]["arguments"])
+        fn_args = parse_tool_arguments(tc)
 
         print("=== TOOL REQUESTED ===\n")
         print(json.dumps(tc, indent=2))
