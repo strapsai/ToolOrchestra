@@ -4,9 +4,8 @@ import argparse
 import json
 import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-import requests
 from pathlib import Path
 
 REPO_PATH = os.getenv("REPO_PATH")
@@ -20,10 +19,14 @@ from evaluation.tool_handlers import dispatch_tool
 
 
 NEMOTRON_MODEL = "nvidia/Nemotron-Orchestrator-8B"
-COSMOS_URL = "http://localhost:9900/api/infer"
 
 ## Example call:
-# python evaluation/eval_cosmos_local.py   --task "Assess the injuries visible on this casualty. What is the appropriate triage category (Immediate, Delayed, Minor, Expectant)?"   --video "/home/darpa_triage_vlm/vlm_workspace/data/share/datasets/year3_labeling/RGB_Snippets/snippets_proj225664_task245750644_ann85399073_20260201T204055Z/casualty_16/casualty_16_f1-1589/casualty_16_f1-1589_fps50_bbox_overlaid.mp4"   --cosmos-reasoning   --cosmos-fps 2.0   --verbose
+# python evaluation/eval_cosmos_local.py \
+#   --task "Assess the injuries visible on this casualty. What is the appropriate triage category (Immediate, Delayed, Minor, Expectant)?" \
+#   --video "/home/darpa_triage_vlm/vlm_workspace/data/share/datasets/year3_labeling/RGB_Snippets/snippets_proj225664_task245750644_ann85399073_20260201T204055Z/casualty_16/casualty_16_f1-1589/casualty_16_f1-1589_fps50_bbox_overlaid.mp4" \
+#   --reasoning \
+#   --fps 2.0 \
+#   --verbose
 
 
 # ToolOrchestra-style local model config for your already-running Nemotron vLLM server.
@@ -34,7 +37,7 @@ LOCAL_MODEL_CONFIG = [
     }
 ]
 
-# Loading in the available tools from the tools.json file (same directorty as this file)
+# Loading in the available tools from the tools.json file (same directory as this file)
 TOOLS_PATH = Path(__file__).resolve().parent / "tools.json"
 
 with open(TOOLS_PATH, "r") as f:
@@ -42,10 +45,9 @@ with open(TOOLS_PATH, "r") as f:
 
 
 SYSTEM_PROMPT = (
-    "You are an orchestration model with access to one tool, cosmos_infer. "
-    "Use cosmos_infer only when the user's request requires visual analysis of the provided "
-    "image or video content. If the task can be answered from text or general knowledge alone, "
-    "answer directly without calling the tool. "
+    "You are an orchestration model with access to the provided tools. "
+    "Use a tool only when the user's request requires capabilities from that tool. "
+    "If the task can be answered from text or general knowledge alone, answer directly without calling a tool. "
     "When tool results are returned, use them to produce the final user-facing answer."
 )
 
@@ -103,7 +105,7 @@ def build_user_message(task: str, videos: List[str], images: List[str]) -> str:
         parts.append("No media paths were provided.")
         parts.append("")
     parts.append(
-        "Use the provided paths exactly as given if you call cosmos_infer."
+        "Use the provided paths exactly as given if you call a tool."
     )
     return "\n".join(parts)
 
@@ -113,8 +115,8 @@ def main() -> None:
     parser.add_argument("--task", required=True)
     parser.add_argument("--video", action="append", default=[])
     parser.add_argument("--image", action="append", default=[])
-    parser.add_argument("--cosmos-reasoning", action="store_true")
-    parser.add_argument("--cosmos-fps", type=float, default=2.0)
+    parser.add_argument("--reasoning", action="store_true")
+    parser.add_argument("--fps", type=float, default=2.0)
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -163,8 +165,8 @@ def main() -> None:
             "prompt": fn_args.get("prompt", args.task),
             "videos": fn_args.get("videos", args.video),
             "images": fn_args.get("images", args.image),
-            "reasoning": bool(fn_args.get("reasoning", args.cosmos_reasoning)),
-            "fps": float(fn_args.get("fps", args.cosmos_fps)),
+            "reasoning": bool(fn_args.get("reasoning", args.reasoning)),
+            "fps": float(fn_args.get("fps", args.fps)),
             "max_tokens": fn_args.get("max_tokens"),
         }
 
