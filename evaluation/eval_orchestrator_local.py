@@ -202,14 +202,19 @@ def main() -> None:
         print(json.dumps(tc, indent=2))
         print()
 
-        tool_arguments = {
-            "prompt": fn_args.get("prompt", args.task),
-            "videos": fn_args.get("videos", args.video),
-            "images": fn_args.get("images", args.image),
-            "reasoning": bool(fn_args.get("reasoning", args.reasoning)),
-            "fps": float(fn_args.get("fps", args.fps)),
-            "max_tokens": fn_args.get("max_tokens"),
-        }
+        tool_arguments = dict(fn_args)
+
+        # Fill a few common defaults only if the tool did not provide them.
+        if "images" not in tool_arguments and args.image:
+            tool_arguments["images"] = args.image
+        if "videos" not in tool_arguments and args.video:
+            tool_arguments["videos"] = args.video
+        if "reasoning" not in tool_arguments:
+            tool_arguments["reasoning"] = args.reasoning
+        if "fps" not in tool_arguments:
+            tool_arguments["fps"] = args.fps
+        if "prompt" not in tool_arguments and "images" not in tool_arguments and "videos" not in tool_arguments:
+            tool_arguments["prompt"] = args.task
 
         tool_result = dispatch_tool(fn, tool_arguments)
 
@@ -233,7 +238,7 @@ def main() -> None:
             {
                 "role": "tool",
                 "tool_call_id": tc["id"],
-                "content": json.dumps(compact_tool_result),
+                "content": json.dumps(tool_result),
             }
         )
 

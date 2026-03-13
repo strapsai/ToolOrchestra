@@ -38,5 +38,61 @@
         "additionalProperties": false
       }
     }
+  },
+
+  {
+  "type": "function",
+  "function": {
+    "name": "medical_static_assessment",
+    "description": "Run a structured static-image medical triage assessment and return 0/1 labels for the static subset of the label space.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "sensor_name": {
+          "type": "string",
+          "description": "Sensor type: 'rgb' for day or 'ir' for infrared/night."
+        },
+        "images": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of image paths to assess."
+        }
+      },
+      "required": ["sensor_name", "images"],
+      "additionalProperties": false
+    }
   }
+},
+
+{
+  "type": "function",
+  "function": {
+    "name": "medical_temporal_assessment",
+    "description": "Run a structured video-based medical triage assessment and return 0/1 labels for the temporal subset of the label space.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "sensor_name": {
+          "type": "string",
+          "description": "Sensor type: 'rgb' for day/electro-optical or 'ir' for infrared/night."
+        },
+        "videos": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of video paths to assess."
+        },
+        "reasoning": {
+          "type": "boolean",
+          "description": "Whether to request reasoning output from Cosmos."
+        },
+        "fps": {
+          "type": "number",
+          "description": "Video sampling FPS to use for temporal assessment."
+        }
+      },
+      "required": ["sensor_name", "videos"],
+      "additionalProperties": false
+    }
+  }
+}
 ]
